@@ -41,7 +41,9 @@ SENDER_STATE = os.getenv("SENDER_STATE", "SP")
 SENDER_ZIPCODE = os.getenv("SENDER_ZIPCODE", "03320-001")
 
 # Configurações do serviço
-SERVICE_ID = int(os.getenv("SERVICE_ID", "1"))  # 1=PAC, 2=SEDEX, 3=PAC Mini
+# SERVICE_ID padrão = 2 (SEDEX) - mais amplamente aceito, pode ser alterado na plataforma Melhor Envio depois
+# Opções: 1=PAC, 2=SEDEX, 3=PAC Mini, etc
+SERVICE_ID = int(os.getenv("SERVICE_ID", "2"))  # SEDEX como padrão
 TRACKER_INTERVAL = int(os.getenv("TRACKER_INTERVAL", "600"))
 DB_PATH = os.getenv("DB_PATH", "data.db")
 
@@ -54,7 +56,9 @@ if not BAGY_TOKEN:
 if not MELHORENVIO_TOKEN:
     logger.warning("⚠️  MELHORENVIO_TOKEN não configurado! A integração não funcionará.")
 
-logger.info(f"🔧 Configurações carregadas: SENDER_ZIPCODE={SENDER_ZIPCODE}, SERVICE_ID={SERVICE_ID}")
+service_names = {1: "PAC", 2: "SEDEX", 3: "PAC Mini"}
+logger.info(f"🔧 Configurações carregadas: SENDER_ZIPCODE={SENDER_ZIPCODE}, SERVICE_ID={SERVICE_ID} ({service_names.get(SERVICE_ID, 'Desconhecido')})")
+logger.info(f"ℹ️  O método de envio pode ser alterado posteriormente na plataforma Melhor Envio")
 
 # === FUNÇÕES AUXILIARES ===
 def clean_document(document: str) -> str:

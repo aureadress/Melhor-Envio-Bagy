@@ -84,11 +84,13 @@ A aplicação estará rodando em `http://localhost:3000`
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `SERVICE_ID` | `1` | ID do serviço (1=PAC, 2=SEDEX, 3=PAC Mini) |
+| `SERVICE_ID` | `2` | ID do serviço (1=PAC, 2=SEDEX, 3=PAC Mini). **SEDEX é padrão por ser mais amplamente aceito. Pode ser alterado na plataforma Melhor Envio após criação da etiqueta.** |
 | `TRACKER_INTERVAL` | `600` | Intervalo de verificação de rastreio (segundos) |
 | `MAX_RETRIES` | `3` | Número máximo de tentativas em caso de erro |
 | `REQUEST_TIMEOUT` | `30` | Timeout de requisições HTTP (segundos) |
 | `PORT` | `3000` | Porta do servidor |
+
+> **💡 Sobre o SERVICE_ID:** A integração usa SEDEX como padrão porque é aceito pela maioria das rotas de envio. Após o pedido ser enviado ao Melhor Envio, você pode **alterar o método de envio diretamente na plataforma** do Melhor Envio antes de gerar a etiqueta. A plataforma mostrá todas as opções disponíveis para aquela rota específica.
 
 ## 🐳 Deploy com Docker
 
