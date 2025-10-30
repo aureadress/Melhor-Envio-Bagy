@@ -593,17 +593,15 @@ def webhook_handler(pedido: Dict[str, Any]):
         
         logger.info(f"📥 Webhook recebido! Payload completo: {pedido}")
         logger.info(f"📥 Processando pedido {order_id}")
+        logger.info(f"📦 Payload completo: {pedido}")
         
-        # Verificar se está faturado
-        fulfillment_status = pedido.get("fulfillment_status", "").lower()
-        logger.info(f"🔍 Status do pedido: {fulfillment_status}")
+        # Log do status (se existir)
+        fulfillment_status = pedido.get("fulfillment_status", "")
+        logger.info(f"📊 Status do pedido: '{fulfillment_status}' (campo: fulfillment_status)")
         
-        if fulfillment_status != "invoiced":
-            logger.info(f"⏭️  Pedido {order_id} ignorado - status: {fulfillment_status} (esperado: invoiced)")
-            return jsonify({
-                "message": "Ignorado - pedido não está faturado",
-                "status": fulfillment_status
-            }), 200
+        # REMOVIDO: Não verificar status - processar todos os pedidos
+        # A Bagy não envia fulfillment_status de forma confiável
+        # Você pode controlar quais pedidos processar diretamente na Bagy
         
         # Verificar se já foi processado
         with sqlite3.connect(DB_PATH) as con:
