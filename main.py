@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 import logging
+import re
 from typing import Optional, Dict, Any, List, Tuple
 from functools import wraps
 
@@ -54,6 +55,49 @@ if not MELHORENVIO_TOKEN:
     logger.warning("⚠️  MELHORENVIO_TOKEN não configurado! A integração não funcionará.")
 
 logger.info(f"🔧 Configurações carregadas: SENDER_ZIPCODE={SENDER_ZIPCODE}, SERVICE_ID={SERVICE_ID}")
+
+# === FUNÇÕES AUXILIARES ===
+def clean_document(document: str) -> str:
+    """Remove caracteres não numéricos de um documento (CPF/CNPJ)."""
+    if not document:
+        return ""
+    return re.sub(r'[^0-9]', '', str(document))
+
+def validate_cpf(cpf: str) -> bool:
+    """Valida um CPF brasileiro."""
+    cpf = clean_document(cpf)
+    
+    # CPF deve ter 11 dígitos
+    if len(cpf) != 11:
+        return False
+    
+    # CPF não pode ter todos os dígitos iguais
+    if cpf == cpf[0] * 11:
+        return False
+    
+    # Validar primeiro dígito verificador
+    sum_dig1 = sum(int(cpf[i]) * (10 - i) for i in range(9))
+    dig1 = 11 - (sum_dig1 % 11)
+    dig1 = 0 if dig1 >= 10 else dig1
+    
+    if dig1 != int(cpf[9]):
+        return False
+    
+    # Validar segundo dígito verificador
+    sum_dig2 = sum(int(cpf[i]) * (11 - i) for i in range(10))
+    dig2 = 11 - (sum_dig2 % 11)
+    dig2 = 0 if dig2 >= 10 else dig2
+    
+    if dig2 != int(cpf[10]):
+        return False
+    
+    return True
+
+def clean_zipcode(zipcode: str) -> str:
+    """Remove caracteres não numéricos de um CEP."""
+    if not zipcode:
+        return ""
+    return re.sub(r'[^0-9]', '', str(zipcode))
 
 # === BANCO LOCAL (SQLite) ===
 def db_init():
@@ -269,6 +313,22 @@ def send_to_melhorenvio(pedido: Dict[str, Any]) -> Tuple[str, str]:
     invoice_value = max(invoice_value, 10.0)  # Valor mínimo
     logger.info(f"💰 Valor da nota fiscal: R$ {invoice_value}")
     
+    # Validar e limpar CPF do cliente
+    customer_doc = clean_document(cust.get("document", ""))
+    if customer_doc and not validate_cpf(customer_doc):
+        logger.warning(f"⚠️  CPF inválido '{customer_doc}' - será enviado vazio ao Melhor Envio")
+        customer_doc = ""
+    elif customer_doc:
+        logger.info(f"✅ CPF do cliente validado: {customer_doc[:3]}***{customer_doc[-2:]}")
+    else:
+        logger.warning(f"⚠️  Pedido sem CPF do cliente - será enviado vazio")
+    
+    # Limpar CEP
+    customer_zipcode = clean_zipcode(addr.get("zipcode", ""))
+    sender_zipcode = clean_zipcode(SENDER_ZIPCODE)
+    
+    logger.info(f"📮 CEP origem: {sender_zipcode}, CEP destino: {customer_zipcode}")
+    
     # Montar payload do Melhor Envio
     payload = {
         "service": SERVICE_ID,
@@ -283,20 +343,20 @@ def send_to_melhorenvio(pedido: Dict[str, Any]) -> Tuple[str, str]:
             "district": SENDER_DISTRICT,
             "city": SENDER_CITY,
             "state_abbr": SENDER_STATE,
-            "postal_code": SENDER_ZIPCODE.replace("-", "").replace(".", "")
+            "postal_code": sender_zipcode
         },
         "to": {
             "name": cust.get("name", "Cliente"),
             "phone": cust.get("phone", ""),
             "email": cust.get("email", ""),
-            "document": cust.get("document", ""),
+            "document": customer_doc,
             "address": addr.get("street", ""),
             "complement": addr.get("complement", ""),
             "number": addr.get("number", "S/N"),
             "district": addr.get("district", addr.get("neighborhood", "")),
             "city": addr.get("city", ""),
             "state_abbr": addr.get("state", ""),
-            "postal_code": addr.get("zipcode", "").replace("-", "").replace(".", "")
+            "postal_code": customer_zipcode
         },
         "products": [{
             "name": f"Pedido #{order_id}",
@@ -490,7 +550,7 @@ def test_webhook():
             "name": "Cliente Teste",
             "email": "teste@example.com",
             "phone": "11999999999",
-            "document": "12345678900"
+            "document": "12345678909"  # CPF válido para teste
         },
         "address": {
             "street": "Rua Teste",
