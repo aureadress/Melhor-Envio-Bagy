@@ -447,8 +447,9 @@ def melhorenvio_check_delivered(me_order_id: str) -> bool:
 
 # === WEBHOOK ===
 @app.route("/webhook", methods=["POST"])
+@app.route("/", methods=["POST"])
 def webhook():
-    """Endpoint para receber webhooks da Bagy."""
+    """Endpoint para receber webhooks da Bagy (aceita / e /webhook)."""
     pedido = request.json or {}
     return webhook_handler(pedido)
 
@@ -553,10 +554,10 @@ def test_webhook():
             "document": "12345678909"  # CPF válido para teste
         },
         "address": {
-            "street": "Rua Teste",
-            "number": "123",
+            "street": "Avenida Paulista",
+            "number": "1000",
             "complement": "Apto 45",
-            "district": "Centro",
+            "district": "Bela Vista",
             "city": "São Paulo",
             "state": "SP",
             "zipcode": "01310-100"
