@@ -389,87 +389,8 @@ def melhorenvio_check_delivered(me_order_id: str) -> bool:
 @app.route("/webhook", methods=["POST"])
 def webhook():
     """Endpoint para receber webhooks da Bagy."""
-    try:
-        # Log detalhado do payload recebido
-        pedido = request.json or {}
-        logger.info(f"📥 Webhook recebido! Payload completo: {pedido}")
-        
-        order_id = pedido.get("id")
-        
-        if not order_id:
-            logger.warning("⚠️  Webhook recebido sem ID de pedido")
-            return jsonify({"error": "ID do pedido não encontrado"}), 400
-        
-        logger.info(f"📥 Processando pedido {order_id}")
-        
-        # Verificar se está faturado
-        fulfillment_status = pedido.get("fulfillment_status", "").lower()
-        logger.info(f"🔍 Status do pedido: {fulfillment_status}")
-        
-        if fulfillment_status != "invoiced":
-            logger.info(f"⏭️  Pedido {order_id} ignorado - status: {fulfillment_status} (esperado: invoiced)")
-            return jsonify({
-                "message": "Ignorado - pedido não está faturado",
-                "status": fulfillment_status
-            }), 200
-        
-        # Verificar se já foi processado
-        with sqlite3.connect(DB_PATH) as con:
-            cur = con.execute("SELECT status FROM orders WHERE bagy_order_id = ?", (order_id,))
-            existing = cur.fetchone()
-            if existing and existing[0] in ['shipped', 'delivered']:
-                logger.info(f"⏭️  Pedido {order_id} já foi processado (status: {existing[0]})")
-                return jsonify({
-                    "message": "Pedido já processado",
-                    "status": existing[0]
-                }), 200
-        
-        # Processar pedido
-        try:
-            logger.info(f"🚀 Iniciando envio para Melhor Envio...")
-            me_order_id, tracking = send_to_melhorenvio(pedido)
-            logger.info(f"✅ Melhor Envio respondeu: ID={me_order_id}, Tracking={tracking}")
-            
-            logger.info(f"📦 Marcando pedido como enviado na Bagy...")
-            bagy_mark_shipped(order_id, tracking)
-            logger.info(f"✅ Pedido marcado como enviado na Bagy")
-            
-            db_save(order_id, me_order_id, tracking, status="shipped")
-            
-            logger.info(f"✅ Pedido {order_id} processado com sucesso! ME ID: {me_order_id}, Rastreio: {tracking}")
-            return jsonify({
-                "success": True,
-                "order_id": order_id,
-                "melhorenvio_order_id": me_order_id,
-                "tracking_code": tracking,
-                "message": "Pedido enviado ao Melhor Envio e marcado como enviado na Bagy"
-            }), 200
-            
-        except Exception as e:
-            import traceback
-            error_msg = str(e)
-            stack_trace = traceback.format_exc()
-            logger.error(f"❌ Erro ao processar pedido {order_id}: {error_msg}")
-            logger.error(f"Stack trace completo:\n{stack_trace}")
-            db_save(order_id, status="error", error=error_msg)
-            
-            return jsonify({
-                "error": error_msg,
-                "order_id": order_id,
-                "details": stack_trace
-            }), 500
-    
-    except Exception as e:
-        import traceback
-        error_msg = str(e)
-        stack_trace = traceback.format_exc()
-        logger.error(f"❌ Erro crítico no webhook: {error_msg}")
-        logger.error(f"Stack trace:\n{stack_trace}")
-        return jsonify({
-            "error": "Erro interno ao processar webhook",
-            "details": error_msg,
-            "stack_trace": stack_trace
-        }), 500
+    pedido = request.json or {}
+    return webhook_handler(pedido)
 
 # === MONITOR DE RASTREIO ===
 def tracking_worker():
@@ -556,6 +477,126 @@ def stats_endpoint():
     except Exception as e:
         logger.error(f"❌ Erro ao obter estatísticas: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route("/test-webhook", methods=["POST"])
+def test_webhook():
+    """Endpoint de teste para simular webhooks da Bagy."""
+    # Payload de exemplo da Bagy
+    test_payload = {
+        "id": "TEST-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"),
+        "fulfillment_status": "invoiced",
+        "total": 150.00,
+        "customer": {
+            "name": "Cliente Teste",
+            "email": "teste@example.com",
+            "phone": "11999999999",
+            "document": "12345678900"
+        },
+        "address": {
+            "street": "Rua Teste",
+            "number": "123",
+            "complement": "Apto 45",
+            "district": "Centro",
+            "city": "São Paulo",
+            "state": "SP",
+            "zipcode": "01310-100"
+        },
+        "items": [{
+            "name": "Produto Teste",
+            "quantity": 1,
+            "price": 150.00,
+            "weight": 0.5,
+            "length": 20,
+            "width": 15,
+            "height": 10
+        }]
+    }
+    
+    logger.info("🧪 Recebendo teste de webhook...")
+    
+    # Processar como webhook normal
+    return webhook_handler(test_payload)
+
+def webhook_handler(pedido: Dict[str, Any]):
+    """Handler reutilizável para processar webhooks."""
+    try:
+        order_id = pedido.get("id")
+        
+        if not order_id:
+            logger.warning("⚠️  Webhook recebido sem ID de pedido")
+            return jsonify({"error": "ID do pedido não encontrado"}), 400
+        
+        logger.info(f"📥 Webhook recebido! Payload completo: {pedido}")
+        logger.info(f"📥 Processando pedido {order_id}")
+        
+        # Verificar se está faturado
+        fulfillment_status = pedido.get("fulfillment_status", "").lower()
+        logger.info(f"🔍 Status do pedido: {fulfillment_status}")
+        
+        if fulfillment_status != "invoiced":
+            logger.info(f"⏭️  Pedido {order_id} ignorado - status: {fulfillment_status} (esperado: invoiced)")
+            return jsonify({
+                "message": "Ignorado - pedido não está faturado",
+                "status": fulfillment_status
+            }), 200
+        
+        # Verificar se já foi processado
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.execute("SELECT status FROM orders WHERE bagy_order_id = ?", (order_id,))
+            existing = cur.fetchone()
+            if existing and existing[0] in ['shipped', 'delivered']:
+                logger.info(f"⏭️  Pedido {order_id} já foi processado (status: {existing[0]})")
+                return jsonify({
+                    "message": "Pedido já processado",
+                    "status": existing[0]
+                }), 200
+        
+        # Processar pedido
+        try:
+            logger.info(f"🚀 Iniciando envio para Melhor Envio...")
+            me_order_id, tracking = send_to_melhorenvio(pedido)
+            logger.info(f"✅ Melhor Envio respondeu: ID={me_order_id}, Tracking={tracking}")
+            
+            logger.info(f"📦 Marcando pedido como enviado na Bagy...")
+            bagy_mark_shipped(order_id, tracking)
+            logger.info(f"✅ Pedido marcado como enviado na Bagy")
+            
+            db_save(order_id, me_order_id, tracking, status="shipped")
+            
+            logger.info(f"✅ Pedido {order_id} processado com sucesso! ME ID: {me_order_id}, Rastreio: {tracking}")
+            return jsonify({
+                "success": True,
+                "order_id": order_id,
+                "melhorenvio_order_id": me_order_id,
+                "tracking_code": tracking,
+                "message": "Pedido enviado ao Melhor Envio e marcado como enviado na Bagy"
+            }), 200
+            
+        except Exception as e:
+            import traceback
+            error_msg = str(e)
+            stack_trace = traceback.format_exc()
+            logger.error(f"❌ Erro ao processar pedido {order_id}: {error_msg}")
+            logger.error(f"Stack trace completo:\n{stack_trace}")
+            db_save(order_id, status="error", error=error_msg)
+            
+            return jsonify({
+                "error": error_msg,
+                "order_id": order_id,
+                "details": stack_trace
+            }), 500
+    
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        stack_trace = traceback.format_exc()
+        logger.error(f"❌ Erro crítico no webhook: {error_msg}")
+        logger.error(f"Stack trace:\n{stack_trace}")
+        return jsonify({
+            "error": "Erro interno ao processar webhook",
+            "details": error_msg,
+            "stack_trace": stack_trace
+        }), 500
 
 if __name__ == "__main__":
     logger.info("="*60)
