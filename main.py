@@ -230,19 +230,23 @@ def melhorenvio_headers() -> Dict[str, str]:
 def send_to_melhorenvio(pedido: Dict[str, Any]) -> Tuple[str, str]:
     """Envia pedido para o Melhor Envio e retorna (order_id, tracking_code)."""
     order_id = pedido.get("id", "UNKNOWN")
+    logger.info(f"📋 Extraindo dados do pedido {order_id}...")
     
     # Extrair dados do endereço
     addr = pedido.get("address", {}) or pedido.get("shipping_address", {})
+    logger.info(f"📍 Endereço encontrado: {bool(addr)} - Dados: {addr}")
     if not addr:
         raise ValueError("Endereço de entrega não encontrado no pedido")
     
     # Extrair dados do cliente
     cust = pedido.get("customer", {})
+    logger.info(f"👤 Cliente encontrado: {bool(cust)} - Nome: {cust.get('name', 'N/A')}")
     if not cust:
         raise ValueError("Dados do cliente não encontrados no pedido")
     
     # Processar itens e calcular dimensões
     items = pedido.get("items", []) or []
+    logger.info(f"📦 Itens encontrados: {len(items)}")
     if not items:
         logger.warning(f"⚠️  Pedido {order_id} sem itens, usando valores padrão")
         items = [{"weight": 0.3, "length": 20, "height": 10, "width": 15, "quantity": 1}]
@@ -250,17 +254,20 @@ def send_to_melhorenvio(pedido: Dict[str, Any]) -> Tuple[str, str]:
     # Calcular peso e dimensões totais
     total_weight = sum(float(it.get("weight", 0.3)) * int(it.get("quantity", 1)) for it in items)
     total_weight = max(total_weight, 0.3)  # Peso mínimo 300g
+    logger.info(f"⚖️  Peso total calculado: {total_weight}kg")
     
     # Pegar as maiores dimensões
     max_length = max((float(it.get("length", 20)) for it in items), default=20)
     max_height = max((float(it.get("height", 10)) for it in items), default=10)
     max_width = max((float(it.get("width", 15)) for it in items), default=15)
+    logger.info(f"📏 Dimensões: {max_length}x{max_width}x{max_height}cm")
     
     # Calcular valor da nota fiscal
     invoice_value = float(pedido.get("total", 0)) or sum(
         float(it.get("price", 0)) * int(it.get("quantity", 1)) for it in items
     )
     invoice_value = max(invoice_value, 10.0)  # Valor mínimo
+    logger.info(f"💰 Valor da nota fiscal: R$ {invoice_value}")
     
     # Montar payload do Melhor Envio
     payload = {
@@ -311,11 +318,14 @@ def send_to_melhorenvio(pedido: Dict[str, Any]) -> Tuple[str, str]:
     }
     
     logger.info(f"🚚 Enviando pedido {order_id} para Melhor Envio...")
-    logger.debug(f"Payload Melhor Envio: {payload}")
+    logger.info(f"📤 Payload completo do Melhor Envio: {payload}")
     
     # Criar ordem no Melhor Envio
     url = f"{MELHORENVIO_BASE}/me/cart"
+    logger.info(f"🔗 URL da API: {url}")
+    
     r = requests.post(url, headers=melhorenvio_headers(), json=payload, timeout=REQUEST_TIMEOUT)
+    logger.info(f"📥 Resposta da API Melhor Envio: Status={r.status_code}, Body={r.text[:500]}")
     
     if not r.ok:
         error_msg = f"Erro Melhor Envio [HTTP {r.status_code}]: {r.text}"
@@ -380,18 +390,22 @@ def melhorenvio_check_delivered(me_order_id: str) -> bool:
 def webhook():
     """Endpoint para receber webhooks da Bagy."""
     try:
+        # Log detalhado do payload recebido
         pedido = request.json or {}
+        logger.info(f"📥 Webhook recebido! Payload completo: {pedido}")
+        
         order_id = pedido.get("id")
         
         if not order_id:
             logger.warning("⚠️  Webhook recebido sem ID de pedido")
             return jsonify({"error": "ID do pedido não encontrado"}), 400
         
-        logger.info(f"📥 Webhook recebido para pedido {order_id}")
-        logger.debug(f"Dados do webhook: {pedido}")
+        logger.info(f"📥 Processando pedido {order_id}")
         
         # Verificar se está faturado
         fulfillment_status = pedido.get("fulfillment_status", "").lower()
+        logger.info(f"🔍 Status do pedido: {fulfillment_status}")
+        
         if fulfillment_status != "invoiced":
             logger.info(f"⏭️  Pedido {order_id} ignorado - status: {fulfillment_status} (esperado: invoiced)")
             return jsonify({
@@ -412,8 +426,14 @@ def webhook():
         
         # Processar pedido
         try:
+            logger.info(f"🚀 Iniciando envio para Melhor Envio...")
             me_order_id, tracking = send_to_melhorenvio(pedido)
+            logger.info(f"✅ Melhor Envio respondeu: ID={me_order_id}, Tracking={tracking}")
+            
+            logger.info(f"📦 Marcando pedido como enviado na Bagy...")
             bagy_mark_shipped(order_id, tracking)
+            logger.info(f"✅ Pedido marcado como enviado na Bagy")
+            
             db_save(order_id, me_order_id, tracking, status="shipped")
             
             logger.info(f"✅ Pedido {order_id} processado com sucesso! ME ID: {me_order_id}, Rastreio: {tracking}")
@@ -426,18 +446,30 @@ def webhook():
             }), 200
             
         except Exception as e:
+            import traceback
             error_msg = str(e)
+            stack_trace = traceback.format_exc()
             logger.error(f"❌ Erro ao processar pedido {order_id}: {error_msg}")
+            logger.error(f"Stack trace completo:\n{stack_trace}")
             db_save(order_id, status="error", error=error_msg)
             
             return jsonify({
                 "error": error_msg,
-                "order_id": order_id
+                "order_id": order_id,
+                "details": stack_trace
             }), 500
     
     except Exception as e:
-        logger.error(f"❌ Erro crítico no webhook: {e}")
-        return jsonify({"error": "Erro interno ao processar webhook"}), 500
+        import traceback
+        error_msg = str(e)
+        stack_trace = traceback.format_exc()
+        logger.error(f"❌ Erro crítico no webhook: {error_msg}")
+        logger.error(f"Stack trace:\n{stack_trace}")
+        return jsonify({
+            "error": "Erro interno ao processar webhook",
+            "details": error_msg,
+            "stack_trace": stack_trace
+        }), 500
 
 # === MONITOR DE RASTREIO ===
 def tracking_worker():
