@@ -274,9 +274,22 @@ def melhorenvio_headers() -> Dict[str, str]:
         "Accept": "application/json"
     }
 
+def normalize_order_data(pedido: Dict[str, Any]) -> Dict[str, Any]:
+    """Normaliza dados do pedido - suporta formato direto e formato com 'event'/'data'."""
+    # Se o webhook vier com estrutura {"event": "...", "data": {...}}
+    if "event" in pedido and "data" in pedido:
+        logger.info(f"📦 Formato webhook com event: {pedido.get('event')}")
+        return pedido["data"]
+    
+    # Formato direto (pedido completo no root)
+    return pedido
+
 @retry_on_failure(max_attempts=MAX_RETRIES)
 def send_to_melhorenvio(pedido: Dict[str, Any]) -> Tuple[str, str]:
     """Envia pedido para o Melhor Envio e retorna (order_id, tracking_code)."""
+    # Normalizar dados do pedido
+    pedido = normalize_order_data(pedido)
+    
     order_id = pedido.get("id", "UNKNOWN")
     logger.info(f"📋 Extraindo dados do pedido {order_id}...")
     
