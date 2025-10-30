@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  webhook:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - BAGY_TOKEN=${BAGY_TOKEN}
+      - MELHORENVIO_TOKEN=${MELHORENVIO_TOKEN}
+      - SENDER_NAME=${SENDER_NAME:-Loja Aurea Dress}
+      - SENDER_PHONE=${SENDER_PHONE:-11999999999}
+      - SENDER_EMAIL=${SENDER_EMAIL:-contato@aureadress.com}
+      - SENDER_DOCUMENT=${SENDER_DOCUMENT}
+      - SENDER_ADDRESS=${SENDER_ADDRESS:-Rua Exemplo}
+      - SENDER_COMPLEMENT=${SENDER_COMPLEMENT}
+      - SENDER_NUMBER=${SENDER_NUMBER:-123}
+      - SENDER_DISTRICT=${SENDER_DISTRICT:-Centro}
+      - SENDER_CITY=${SENDER_CITY:-São Paulo}
+      - SENDER_STATE=${SENDER_STATE:-SP}
+      - SENDER_ZIPCODE=${SENDER_ZIPCODE:-03320-001}
+      - SERVICE_ID=${SERVICE_ID:-1}
+      - TRACKER_INTERVAL=${TRACKER_INTERVAL:-600}
+      - MAX_RETRIES=${MAX_RETRIES:-3}
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-30}
+      - PORT=3000
+      - DB_PATH=/app/data/data.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
